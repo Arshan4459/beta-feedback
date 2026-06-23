@@ -38,42 +38,51 @@ export async function POST(req: NextRequest) {
   const validClips = validateClips(clips, submissionId, clean);
 
   const str = (k: string) => (typeof clean[k] === "string" ? (clean[k] as string) : null);
-  const db = await getDb();
 
-  // Idempotent insert: a retried submission (same id) is a no-op success.
-  const inserted = await db
-    .insert(schema.submissions)
-    .values({
-      id: submissionId,
-      admissionNo: str("admission_no") ?? "",
-      grade: str("grade"),
-      device: str("device"),
-      overallKeep: str("overall_keep"),
-      answers: clean,
-      voiceAnswers: validClips.map((c) => c.questionKey),
-      submittedAt: submittedAt ? new Date(submittedAt) : null,
-      ipHash: hashIp(ip),
-      userAgent: req.headers.get("user-agent")?.slice(0, 300) ?? null,
-    })
-    .onConflictDoNothing({ target: schema.submissions.id })
-    .returning({ id: schema.submissions.id });
+  try {
+    const db = await getDb();
 
-  if (inserted.length === 0) return Response.json({ ok: true, deduped: true });
+    // Idempotent insert: a retried submission (same id) is a no-op success.
+    const inserted = await db
+      .insert(schema.submissions)
+      .values({
+        id: submissionId,
+        admissionNo: str("admission_no") ?? "",
+        grade: str("grade"),
+        device: str("device"),
+        overallKeep: str("overall_keep"),
+        answers: clean,
+        voiceAnswers: validClips.map((c) => c.questionKey),
+        submittedAt: submittedAt ? new Date(submittedAt) : null,
+        ipHash: hashIp(ip),
+        userAgent: req.headers.get("user-agent")?.slice(0, 300) ?? null,
+      })
+      .onConflictDoNothing({ target: schema.submissions.id })
+      .returning({ id: schema.submissions.id });
 
-  if (validClips.length > 0) {
-    await db.insert(schema.voiceAnswers).values(
-      validClips.map((c) => ({
-        id: randomUUID(),
-        submissionId,
-        questionKey: c.questionKey,
-        objectKey: c.objectKey,
-        contentType: c.contentType ?? null,
-        bytes: c.bytes ?? null,
-        durationSec: c.durationSec ?? null,
-        transcriptStatus: "pending" as const,
-      })),
+    if (inserted.length === 0) return Response.json({ ok: true, deduped: true });
+
+    if (validClips.length > 0) {
+      await db.insert(schema.voiceAnswers).values(
+        validClips.map((c) => ({
+          id: randomUUID(),
+          submissionId,
+          questionKey: c.questionKey,
+          objectKey: c.objectKey,
+          contentType: c.contentType ?? null,
+          bytes: c.bytes ?? null,
+          durationSec: c.durationSec ?? null,
+          transcriptStatus: "pending" as const,
+        })),
+      );
+    }
+
+    return Response.json({ ok: true });
+  } catch (e) {
+    console.error("submit db error:", e);
+    return Response.json(
+      { error: "Could not save submission", detail: String((e as Error)?.message ?? e) },
+      { status: 500 },
     );
   }
-
-  return Response.json({ ok: true });
 }

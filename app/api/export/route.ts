@@ -9,7 +9,7 @@ import { desc } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { ALL_QUESTIONS } from "@/lib/schema";
 import { getDownloadUrl } from "@/lib/storage";
-import type { VoiceAnswer } from "@/lib/db/schema";
+import type { Submission, VoiceAnswer } from "@/lib/db/schema";
 
 export const runtime = "nodejs";
 
@@ -32,12 +32,20 @@ export async function GET(req: NextRequest) {
   if (!isAuthed(req, token)) return new Response("Unauthorized", { status: 401 });
 
   const format = new URL(req.url).searchParams.get("format") ?? "json";
-  const db = await getDb();
-  const subs = await db
-    .select()
-    .from(schema.submissions)
-    .orderBy(desc(schema.submissions.createdAt));
-  const voices = await db.select().from(schema.voiceAnswers);
+
+  let subs: Submission[];
+  let voices: VoiceAnswer[];
+  try {
+    const db = await getDb();
+    subs = await db.select().from(schema.submissions).orderBy(desc(schema.submissions.createdAt));
+    voices = await db.select().from(schema.voiceAnswers);
+  } catch (e) {
+    console.error("export db error:", e);
+    return Response.json(
+      { error: "Could not read submissions", detail: String((e as Error)?.message ?? e) },
+      { status: 500 },
+    );
+  }
 
   const bySub = new Map<string, VoiceAnswer[]>();
   for (const v of voices) {
