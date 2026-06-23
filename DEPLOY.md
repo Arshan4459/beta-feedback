@@ -1,71 +1,79 @@
-# Deploy runbook
+# Deploy runbook — all-in-one VPS
 
-Architecture: **Netlify** runs the Next.js web tier (form + API routes). **Your
-own box** runs Postgres + MinIO (S3-compatible storage) + the self-hosted Whisper
-worker. Audio uploads go **browser → MinIO directly** via presigned URLs (so they
-never hit Netlify's ~6 MB function limit).
+Everything runs on **one server** via `docker-compose.prod.yml`:
 
 ```
- Student ──presign──▶ Netlify (/api/uploads/presign, /api/submit)
-        ──PUT clip──▶ MinIO (your box)
-                       Netlify ──▶ Postgres (your box): submission + voice rows (pending)
- Whisper worker (your box) ──poll pending──▶ transcribe ──▶ Postgres
- GTM team ──Bearer token──▶ Netlify /api/export (CSV/JSON + audio links + transcripts)
+ Student ─HTTPS─▶ Caddy (auto TLS) ─▶ Next.js app ─▶ Postgres
+                                          └─ writes clips to a shared disk volume
+ Whisper worker ─poll pending─▶ reads the volume ─▶ transcribes ─▶ Postgres
+ GTM team ─Bearer token─▶ /api/export  (CSV/JSON + audio + transcripts)
 ```
 
-## 1. Bring up your infra box
-On a small VPS with Docker installed (or locally once Docker Desktop is on):
+No MinIO, no external services: audio is stored on disk and read by the worker
+over a shared Docker volume. Caddy gets a Let's Encrypt cert automatically.
 
+## Prerequisites
+- A small **VPS** — Ubuntu 22.04+, **≥ 2 GB RAM** (4 GB if using the `base`/`small`
+  Whisper model), e.g. Hetzner CX22 (~€4/mo) or a $6 DigitalOcean droplet.
+- A **domain** (or subdomain) you can point at the VPS — required for valid HTTPS,
+  which the microphone needs.
+
+## 1. Prepare the server
 ```bash
-cp .env.example .env          # set POSTGRES_PASSWORD, S3_ACCESS_KEY_ID/SECRET, S3_BUCKET, WHISPER_MODEL
-docker compose up -d          # postgres + minio + worker (first worker run downloads the model)
+# install Docker
+curl -fsSL https://get.docker.com | sh
+
+# point your DNS A record (e.g. feedback.yourschool.com) at the VPS IP, then:
+git clone https://github.com/Arshan4459/<repo>.git
+cd <repo>
 ```
 
-Make Postgres (5432) and MinIO (9000) reachable from Netlify — ideally behind
-TLS on your domain (e.g. `db.yourdomain.com`, `storage.yourdomain.com`) via a
-reverse proxy. Lock the firewall to what you need.
-
-## 2. Migrate the database
-From your machine, pointed at the box's Postgres:
+## 2. Configure
 ```bash
-DATABASE_URL='postgres://feedback:<pw>@<host>:5432/feedback' npm run db:migrate
+cp .env.example .env
 ```
-
-## 3. Configure storage CORS
-The browser PUTs clips straight to MinIO, so allow your site origin:
-- Allowed origins: `https://<your-netlify-site>` (and your custom domain)
-- Allowed methods: `PUT`
-- Allowed headers: `Content-Type`
-(MinIO: `mc admin config` / bucket CORS; R2/S3: bucket CORS policy.)
-
-## 4. Deploy the web tier to Netlify
-Connect the repo in the Netlify UI (or `netlify deploy --build --prod`). Set
-**Site → Environment variables**:
-
+Set in `.env`:
 | Var | Value |
 |---|---|
-| `DATABASE_URL` | `postgres://feedback:<pw>@<host>:5432/feedback` |
-| `S3_ENDPOINT` | internal storage URL (server-side, e.g. `https://storage.yourdomain.com`) |
-| `NEXT_PUBLIC_S3_PUBLIC_ENDPOINT` | browser-facing storage origin (for CSP) |
-| `S3_BUCKET` / `S3_REGION` | bucket + region |
-| `S3_ACCESS_KEY_ID` / `S3_SECRET_ACCESS_KEY` | storage keys |
-| `S3_FORCE_PATH_STYLE` | `true` (MinIO) |
-| `NEXT_PUBLIC_SUBMIT_MODE` | `api` |
-| `IP_HASH_SALT` | long random string |
-| `EXPORT_TOKEN` | long random string (enables `/api/export`) |
+| `DOMAIN` | `feedback.yourschool.com` (matches your DNS) |
+| `POSTGRES_PASSWORD` | a strong password |
+| `IP_HASH_SALT` | a long random string |
+| `EXPORT_TOKEN` | a long random string (enables `/api/export`) |
+| `WHISPER_MODEL` | `base` (or `small` for better accuracy; `tiny` for low RAM) |
 
-`netlify.toml` already pins the build + Next adapter. Netlify serves HTTPS, so
-the microphone works on every device (phones/Chromebooks included).
+## 3. Launch
+```bash
+docker compose -f docker-compose.prod.yml up -d --build
+```
+Caddy obtains the TLS cert, the app runs DB migrations on startup, and the worker
+downloads the Whisper model on first use. Open `https://<DOMAIN>` — done.
 
-## 5. Smoke test
-- Open the site, submit with a voice clip → thank-you screen.
-- `curl -H "Authorization: Bearer $EXPORT_TOKEN" https://<site>/api/export?format=json`
-  → your submission appears; its clip shows `status: pending`, then `done` once
-  the worker transcribes it.
+## 4. Smoke test
+- Submit the form with a voice clip → thank-you screen.
+- `curl -H "Authorization: Bearer $EXPORT_TOKEN" https://<DOMAIN>/api/export?format=json`
+  → your submission appears; the clip flips from `pending` to `done` with a
+  transcript within seconds (`docker compose -f docker-compose.prod.yml logs -f worker`).
+
+## 5. Operate
+- **Logs:** `docker compose -f docker-compose.prod.yml logs -f app worker`
+- **Update:** `git pull && docker compose -f docker-compose.prod.yml up -d --build`
+- **Backups:** the `pgdata` (database) and `uploads` (audio) volumes. Snapshot the
+  VPS or `docker run --rm -v betafeedback_pgdata:/v alpine tar ...`.
+- **Export for the GTM team:** `…/api/export?format=csv` (or `json`) with the
+  `Authorization: Bearer <EXPORT_TOKEN>` header.
 
 ## 6. Before real students use it (privacy / DPDP)
 - Add a consent/notice line and confirm your parental-consent stance.
 - Set a **retention policy** (recommended: delete raw audio N days after
-  transcription; keep transcripts). Add a scheduled job for it.
-- Decide a per-IP submit cap (currently 20/min) and whether duplicate admission
-  numbers are de-duped at analysis time (they're allowed at write time).
+  transcription; keep transcripts). A cron + small SQL/`rm` job on the volume.
+- Per-IP caps are in place (submit 20/min, upload 120/min); duplicate admission
+  numbers are allowed at write time and can be de-duped at analysis.
+
+---
+
+### Alternative: Netlify + separate box
+If you ever want the web tier on Netlify instead, the code supports it
+(`NEXT_PUBLIC_SUBMIT_MODE=api`, `STORAGE_DRIVER=s3` with S3/MinIO + presigned
+uploads). `netlify.toml` and `docker-compose.yml` (Postgres + MinIO + worker) are
+kept for that path, but it needs HTTPS + CORS on the storage endpoint. The
+all-in-one VPS above is simpler and recommended.

@@ -6,5 +6,4 @@ node_modules
 .netlify
 .env*
 *.log
-drizzle
 npm-debug.log*

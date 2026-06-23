@@ -1,0 +1,10 @@
+# Automatic HTTPS (Let's Encrypt) reverse proxy to the Next.js app.
+# DOMAIN is provided via env (see docker-compose.prod.yml / .env).
+{$DOMAIN} {
+	encode gzip
+	# Cap upload size (voice clips are ~1 MB/min; allow headroom).
+	request_body {
+		max_size 25MB
+	}
+	reverse_proxy {$APP_UPSTREAM:app:3000}
+}

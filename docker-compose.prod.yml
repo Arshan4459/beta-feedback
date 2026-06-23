@@ -1,0 +1,76 @@
+# All-in-one production stack for a single VPS:
+#   Caddy (auto-HTTPS) -> Next.js app -> Postgres, with a shared uploads volume
+#   read by the self-hosted Whisper worker. No MinIO needed — audio is stored on
+#   disk (one box), so there's no cross-origin upload, CORS, or mixed-content.
+#
+#   1. Point your domain's A record at the VPS.
+#   2. cp .env.example .env  and set DOMAIN, POSTGRES_PASSWORD, IP_HASH_SALT,
+#      EXPORT_TOKEN, WHISPER_MODEL.
+#   3. docker compose -f docker-compose.prod.yml up -d --build
+# Caddy obtains a TLS cert automatically; the app migrates the DB on startup.
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: feedback
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      POSTGRES_DB: feedback
+    volumes: ["pgdata:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U feedback"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  app:
+    build: { context: ., dockerfile: Dockerfile }
+    environment:
+      DATABASE_URL: postgres://feedback:${POSTGRES_PASSWORD}@postgres:5432/feedback
+      DATABASE_SSL: "false"
+      STORAGE_DRIVER: local
+      LOCAL_STORAGE_DIR: /data/uploads
+      IP_HASH_SALT: ${IP_HASH_SALT:?set IP_HASH_SALT}
+      EXPORT_TOKEN: ${EXPORT_TOKEN:?set EXPORT_TOKEN}
+      MAX_AUDIO_BYTES: ${MAX_AUDIO_BYTES:-15728640}
+    volumes: ["uploads:/data/uploads"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  worker:
+    build: { context: ., dockerfile: worker/Dockerfile }
+    environment:
+      DATABASE_URL: postgres://feedback:${POSTGRES_PASSWORD}@postgres:5432/feedback
+      DATABASE_SSL: "false"
+      LOCAL_STORAGE_DIR: /data/uploads
+      WHISPER_MODEL: ${WHISPER_MODEL:-base}
+    volumes:
+      - "uploads:/data/uploads"
+      - "hfcache:/root/.cache/huggingface"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2
+    ports: ["80:80", "443:443"]
+    environment:
+      DOMAIN: ${DOMAIN:?set DOMAIN}
+      APP_UPSTREAM: app:3000
+    volumes:
+      - "./Caddyfile:/etc/caddy/Caddyfile:ro"
+      - "caddydata:/data"
+      - "caddyconfig:/config"
+    depends_on: [app]
+    restart: unless-stopped
+
+volumes:
+  pgdata: {}
+  uploads: {}
+  hfcache: {}
+  caddydata: {}
+  caddyconfig: {}

@@ -9,6 +9,7 @@ import {
   isLocalStorage,
   putLocalObject,
 } from "@/lib/storage";
+import { clientIp, hashIp, rateLimit } from "@/lib/api";
 
 export const runtime = "nodejs";
 
@@ -21,6 +22,9 @@ const CONTENT_TYPES: Record<string, string> = {
 
 export async function PUT(req: NextRequest, ctx: { params: Promise<{ key: string[] }> }) {
   if (!isLocalStorage) return new Response("Not found", { status: 404 });
+  if (!rateLimit(`upload:${hashIp(clientIp(req))}`, 120, 60_000)) {
+    return new Response("Too many requests", { status: 429 });
+  }
   const { key } = await ctx.params;
   const objectKey = key.join("/");
   const buf = Buffer.from(await req.arrayBuffer());
