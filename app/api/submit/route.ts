@@ -80,8 +80,9 @@ export async function POST(req: NextRequest) {
     return Response.json({ ok: true });
   } catch (e) {
     console.error("submit db error:", e);
+    const err = e as { message?: string; cause?: { message?: string } };
     return Response.json(
-      { error: "Could not save submission", detail: String((e as Error)?.message ?? e) },
+      { error: "Could not save submission", cause: err?.cause?.message ?? err?.message ?? String(e) },
       { status: 500 },
     );
   }
