@@ -41,11 +41,7 @@ export async function GET(req: NextRequest) {
     voices = await db.select().from(schema.voiceAnswers);
   } catch (e) {
     console.error("export db error:", e);
-    const err = e as { message?: string; cause?: { message?: string } };
-    return Response.json(
-      { error: "Could not read submissions", cause: err?.cause?.message ?? err?.message ?? String(e) },
-      { status: 500 },
-    );
+    return Response.json({ error: "Could not read submissions" }, { status: 500 });
   }
 
   const bySub = new Map<string, VoiceAnswer[]>();

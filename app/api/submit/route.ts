@@ -79,11 +79,8 @@ export async function POST(req: NextRequest) {
 
     return Response.json({ ok: true });
   } catch (e) {
+    // Detail goes to server logs only — never leaked to the client.
     console.error("submit db error:", e);
-    const err = e as { message?: string; cause?: { message?: string } };
-    return Response.json(
-      { error: "Could not save submission", cause: err?.cause?.message ?? err?.message ?? String(e) },
-      { status: 500 },
-    );
+    return Response.json({ error: "Could not save submission" }, { status: 500 });
   }
 }
