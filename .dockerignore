@@ -1,0 +1,10 @@
+node_modules
+.next
+.git
+.pglite
+.uploads
+.netlify
+.env*
+*.log
+drizzle
+npm-debug.log*

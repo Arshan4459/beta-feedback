@@ -36,6 +36,13 @@ yarn-error.log*
 # vercel
 .vercel
 
+# netlify
+.netlify
+
+# local dev data stores (PGlite db + local object storage)
+/.pglite
+/.uploads
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts

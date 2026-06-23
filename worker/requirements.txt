@@ -1,0 +1,8 @@
+# Self-hosted speech-to-text. faster-whisper bundles audio decoding via PyAV,
+# so system ffmpeg is usually unnecessary (the Docker image installs it anyway).
+#
+# huggingface_hub is pinned: faster-whisper 1.0.3 imports `requests`, which the
+# 1.x line of huggingface_hub no longer pulls in. 0.24.x keeps the old API + deps.
+faster-whisper==1.0.3
+huggingface_hub==0.24.6
+requests>=2.31

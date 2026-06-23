@@ -1,66 +1,26 @@
-import Image from "next/image";
-import styles from "./page.module.css";
+import FeedbackForm from "@/components/FeedbackForm";
 
 export default function Home() {
   return (
-    <div className={styles.page}>
-      <main className={styles.main}>
-        <Image
-          className={styles.logo}
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className={styles.intro}>
-          <h1>To get started, edit the page.tsx file.</h1>
-          <p>
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className={styles.ctas}>
-          <a
-            className={styles.primary}
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className={styles.logo}
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className={styles.secondary}
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
+    <div className="wrap">
+      <header className="hero">
+        <h1>Tell us what you think of the new app! 🚀</h1>
+        <p>
+          Your answers help us make the app better. There are no wrong answers — please be honest.
+          We ask for your admission number so we can follow up on any problems you report.
+        </p>
+        <p style={{ marginTop: 8 }}>
+          💬 You can answer by tapping a choice <strong>or</strong> by tapping{" "}
+          <strong>🎤 Record answer</strong> to say it out loud.
+        </p>
+      </header>
+
+      <FeedbackForm />
+
+      <footer>
+        Your answers are linked to your admission number and seen only by the app team. · New App
+        Beta
+      </footer>
     </div>
   );
 }
